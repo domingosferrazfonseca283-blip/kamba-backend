@@ -2,7 +2,8 @@ import os
 from flask import Flask, jsonify, request
 from sqlalchemy import func
 from flask_cors import CORS
-from models import db, User, ServiceRequest, Proposal, Contract, SupportTicket
+from models import db, User, ServiceRequest, Proposal, Contract, SupportTicket, Company
+import secrets
 
 app = Flask(__name__)
 
@@ -356,13 +357,89 @@ def login():
 
 
 def check_admin():
+    token = request.headers.get("X-Company-Token")
+
+    if token:
+        company = Company.query.filter_by(token=token).first()
+        if company:
+            return True
+
     phone = request.headers.get("X-Admin-Phone")
 
-    if not phone:
-        return False
+    if phone:
+        user = User.query.filter_by(phone=phone, role="admin").first()
+        if user:
+            return True
 
-    user = User.query.filter_by(phone=phone, role="admin").first()
-    return user is not None
+    return False
+
+
+@app.post("/api/admin/company")
+def create_company_member():
+    master_key = request.headers.get("X-Master-Key")
+
+    if master_key != ADMIN_KEY:
+        return jsonify({"error": "Chave mestra inválida"}), 403
+
+    data = request.get_json(silent=True) or {}
+
+    required = ["name", "email", "key"]
+    missing = [f for f in required if not data.get(f)]
+
+    if missing:
+        return jsonify({
+            "error": "Campos obrigatórios em falta",
+            "fields": missing
+        }), 400
+
+    company = Company(
+        name=data["name"],
+        email=data["email"],
+        key=data["key"],
+        area=data.get("area", "general"),
+        is_admin=data.get("is_admin", False)
+    )
+
+    db.session.add(company)
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        return jsonify({"error": "Email já registado"}), 409
+
+    return jsonify({
+        "id": company.id,
+        "name": company.name,
+        "email": company.email
+    }), 201
+
+
+@app.post("/api/admin/company-login")
+def company_login():
+    data = request.get_json(silent=True) or {}
+    email = data.get("email")
+    key = data.get("key")
+
+    if not email or not key:
+        return jsonify({"error": "Email e chave são obrigatórios"}), 400
+
+    company = Company.query.filter_by(email=email, key=key).first()
+
+    if not company:
+        return jsonify({"error": "Credenciais inválidas"}), 403
+
+    company.token = secrets.token_hex(32)
+    db.session.commit()
+
+    return jsonify({
+        "id": company.id,
+        "name": company.name,
+        "email": company.email,
+        "area": company.area,
+        "token": company.token,
+        "is_admin": company.is_admin
+    })
 
 
 @app.post("/api/admin/team-login")

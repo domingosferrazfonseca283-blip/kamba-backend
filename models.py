@@ -104,3 +104,14 @@ class SupportTicket(db.Model):
             "status": self.status,
             "created_at": self.created_at.isoformat()
         }
+
+
+class Company(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    key = db.Column(db.String(120), nullable=False)
+    area = db.Column(db.String(60), default="general")
+    is_admin = db.Column(db.Boolean, default=False)
+    token = db.Column(db.String(64))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
